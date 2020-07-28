@@ -1,0 +1,7 @@
+shapely
+gpxpy
+numpy
+networkx
+pandas
+geopandas
+osmnx
