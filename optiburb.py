@@ -413,13 +413,13 @@ class Burbing:
     ##
     def save_fig(self):
 
-        filename = self.name
+        filepath = f'{self.name}-nodes.svg'
 
-        log.info('saving SVG node file as %s', filename)
+        log.info('saving SVG node file as %s', filepath)
 
         nc = ['red' if node in self.odd_nodes else 'blue' for node in self.g.nodes() ]
 
-        fig, ax = osmnx.plot_graph(self.g, show=False, save=True, node_color=nc, filename=filename, file_format='svg')
+        fig, ax = osmnx.plot_graph(self.g, show=False, save=True, node_color=nc, filepath=filepath)
 
         return
 

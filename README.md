@@ -89,14 +89,18 @@ If the suburb fails with some weird message about no nodes in the
 polygon, you may have selected a name, instead of the whole locality.
 I haven't worked out how to specifically search for a administraive
 boundary yet, so the ugly hack in the short term is to use --select 2
-to pick the next search result.
+to pick the next search result.  Sometimes if you specify the entire
+name including the broader admin boundary (shire, country, etc) it may
+help.. You can experiment with the search at https://www.openstreetmap.org/
 
 ```bash
-./optiburb.py --select 2 somewhere
+./optiburb.py --select 2 'footscray, victoria, australia'
 ```
 
 You can also import polygon boundaries from shapefiles, but you'll
-need to know the column name and the key in advance.
+need to know the column name and the key in advance.  In this example,
+the shapefile is from the Australian Government with state locality
+boundaries.
 
 ```bash
 ./optiburb.py --save-fig --save-boundary --prune --shapefile ~/Projects/gis/VIC_LOCALITY_POLYGON_shp,vic_loca_2 KEW
