@@ -472,11 +472,10 @@ class Burbing:
 
         gpx = gpxpy.gpx.GPX()
         gpx.name = f'boundary {self.name}'
-        gpx.author_name = 'Jim Crumpler'
+        gpx.author_name = 'optiburb'
         gpx.creator = 'experimental burbing'
         gpx.description = f'experimental burbing boundary for {self.name}'
 
-        # Create first track in our GPX:
         track = gpxpy.gpx.GPXTrack()
         track.name = f'burb bound {self.name}'
 
@@ -518,17 +517,15 @@ class Burbing:
 
         gpx = gpxpy.gpx.GPX()
         gpx.name = f'burb {self.name}'
-        gpx.author_name = 'Jim Crumpler'
+        gpx.author_name = 'optiburb'
         #gpx.author_email =''
         gpx.creator = 'experimental burbing'
         gpx.description = f'experimental burbing route for {self.name}'
 
-        # Create first track in our GPX:
         track = gpxpy.gpx.GPXTrack()
         track.name = f'burb trk {self.name}'
         gpx.tracks.append(track)
 
-        # Create first segment in our GPX track:
         segment = gpxpy.gpx.GPXTrackSegment()
         track.segments.append(segment)
 

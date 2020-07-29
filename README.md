@@ -48,6 +48,10 @@ packages (tested on late version of Python 3 only so far).
 * geopandas
 * osmnx
 
+```bash
+pip install -r requirements.txt
+```
+
 ## Options
 
 ```bash
