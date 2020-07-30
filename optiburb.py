@@ -621,7 +621,8 @@ if __name__ == '__main__':
     parser.add_argument('--start', type=str, help='optional starting address')
     parser.add_argument('--prune', default=False, action='store_true', help='prune unnamed gravel tracks')
     parser.add_argument('--simplify', default=False, action='store_true', help='simplify OSM nodes on load')
-    parser.add_argument('--simplify-gpx', default=False, action='store_true', help='reduce GPX points')
+    parser.add_argument('--simplify-gpx', dest='simplify_gpx', default=True, action='store_true', help='reduce GPX points')
+    parser.add_argument('--complex-gpx', dest='simplify_gpx', action='store_false', help='leave all the OSM points in the GPX output')
     parser.add_argument('--select', type=int, default=1, help='select the nth item from the search results. a truely awful hack because i cant work out how to search for administrative boundaries.')
     parser.add_argument('--shapefile', type=str, default=None, help='filename of shapefile to load localities, comma separated by the column to match on')
     parser.add_argument('--buffer', type=int, dest='buffer', default=20, help='buffer distsance around polygon')
@@ -679,7 +680,7 @@ if __name__ == '__main__':
         pass
 
     graph_aug, euler_circuit = burbing.determine()
-    burbing.create_gpx_track(graph_aug, euler_circuit, args.simplify)
+    burbing.create_gpx_track(graph_aug, euler_circuit, args.simplify_gpx)
 
     if args.save_fig:
         burbing.save_fig()
