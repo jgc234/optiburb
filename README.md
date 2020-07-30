@@ -86,8 +86,11 @@ optional arguments:
 To fetch data from OSM search using overpass API, state the long winded name of the suburb.
 
 ```bash
-./optiburb.py 'bellfield, victoria, australia'
+./optiburb.py "bellfield, victoria, australia"
 ```
+
+You can add multiple adjoining suburbs and they will be merged
+together (just incase a single suburb isn't big enough).
 
 If the suburb fails with some weird message about no nodes in the
 polygon, you may have selected a name, instead of the whole locality.
@@ -98,7 +101,7 @@ name including the broader admin boundary (shire, country, etc) it may
 help.. You can experiment with the search at https://www.openstreetmap.org/
 
 ```bash
-./optiburb.py --select 2 'footscray, victoria, australia'
+./optiburb.py --select 2 "footscray, victoria, australia"
 ```
 
 You can also import polygon boundaries from shapefiles, but you'll
