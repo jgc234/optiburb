@@ -22,8 +22,6 @@ import argparse
 import gpxpy
 import gpxpy.gpx
 
-# TODO - look into detecting private roads, surface select (gravel,
-# etc).
 
 logging.basicConfig(format='%(asctime)-15s %(filename)s:%(funcName)s:%(lineno)s [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S', level=logging.DEBUG)
 log = logging.getLogger(__name__)
@@ -41,18 +39,42 @@ class Burbing:
         self.name = ''
         self.start = None
 
-        # XXX - should really import the default osmnx fitlers for
-        # each activity type and adjust those.. The one below has a
-        # parking_aisle filter added from the standard bike model.
 
+        #
+        # filters to roughly match those used by rendrer.earth (see
+        # https://wandrer.earth/scoring )
+        #
         self.custom_filter = (
-            f'["highway"]["area"!~"yes"]["highway"!~"footway|steps|corridor|elevator|'
-            f'escalator|motor|proposed|construction|abandoned|platform|raceway"]'
-            f'["bicycle"!~"no"]["service"!~"private|parking_aisle"]["access"!~"private"]'
+
+            '["highway"]'
+
+            '["area"!~"yes"]'
+
+            '["highway"!~"motorway|motorway_link|trunk|trunk_link|bridleway|footway|service|pedestrian|'
+            'steps|stairs|escalator|elevator|construction|proposed|demolished|escape|bus_guideway|'
+            'sidewalk|crossing|bus_stop|traffic_signals|stop|give_way|milestone|platform|speed_camera|'
+            'raceway|rest_area|traffic_island|services|yes|no|drain|street_lamp|razed|corridor|abandoned"]'
+
+            '["access"!~"private|no|customers"]'
+
+            '["bicycle"!~"dismount|use_sidepath|private|no"]'
+
+            '["service"!~"private|parking_aisle"]'
+
+            '["motorroad"!="yes"]'
+
+            '["golf_cart"!~"yes|designated|private"]'
+
+            '[!"waterway"]'
+
+            '[!"razed"]'
         )
 
 
-        # not all of this data is used but it looks interesting.
+        log.debug('custom_filter=%s', self.custom_filter)
+
+        # not all of these fields are used at the moment, but they
+        # look like fun for the future.
 
         useful_tags_way = [
             'bridge', 'tunnel', 'oneway', 'lanes', 'ref', 'name', 'highway', 'maxspeed', 'service',
@@ -166,6 +188,10 @@ class Burbing:
     ##
     def augment_graph(self, g, pairs):
 
+        # create a new graph and stuff in the new fake/virtual edges
+        # between odd pairs.  Generate the edge metadata to make them
+        # look similar to the native edges.
+
         graph_aug = g.copy()
 
         log.info('(augmented) eulerian=%s', nx.is_eulerian(graph_aug))
@@ -196,24 +222,13 @@ class Burbing:
 
         return graph_aug
 
+
     ##
     ##
-    def determine(self):
+    def print_edges(self, g):
 
-        self.g_directed = self.g
-        self.g = osmnx.utils_graph.get_undirected(self.g_directed)
-
-        log.info('eulerian=%s', nx.is_eulerian(self.g))
-
-        log.info('undirected eulerian=%s', nx.is_eulerian(self.g))
-
-        #
-        # find all odd nodes
-        #
-        # odds = { n for n, d in self.g.out_degree() if d % 2 == 1 and d != 1 }
-
-        for edge in self.g.edges:
-            data = self.g.get_edge_data(*edge, 0)
+        for edge in g.edges:
+            data = g.get_edge_data(*edge, 0)
 
             _osmid = ','.join(data.get('osmid')) if type(data.get('osmid')) == list else str(data.get('osmid'))
             _name = ','.join(data.get('name')) if type(data.get('name')) == list else str(data.get('name'))
@@ -224,20 +239,24 @@ class Burbing:
             log.debug(f'{_osmid:10} {_name:30} {_highway:20} {_surface:10} {_oneway:10} {_access:10}')
             pass
 
+    ##
+    ##
+    def determine(self):
+
+        self.g_directed = self.g
+        self.g = osmnx.utils_graph.get_undirected(self.g_directed)
+
+
+        self.print_edges(self.g)
+
         self.odd_nodes = self.find_odd_nodes()
 
-        log.info('odd_nodes=%s', len(self.odd_nodes))
-
-        log.debug('calculating combinations')
+        log.info('eulerian=%s, odd_ndoes=%s', nx.is_eulerian(self.g), len(self.odd_nodes))
 
         odd_node_pairs = self.get_pair_combinations(self.odd_nodes)
 
         log.info('combinations=%s', len(odd_node_pairs))
 
-        #
-        # get shortest path distances for all odd pairs
-        #
-        log.info('dijkstra path start for all combinations - this might take a long time.  Run with --debug=debug to see progress')
         odd_pair_paths = self.get_shortest_path_pairs(self.g, odd_node_pairs)
 
         # XXX - this part doesn't work well because it doesn't
@@ -246,32 +265,28 @@ class Burbing:
         # create another graph off odd pairs.. using negative weights
         # because we want minimum distances but only maximum algorithm
         # exists in networkx.
-        #
-        log.debug('new undirected graph of pairs with negative lengths')
+
         g_odd_nodes = nx.Graph()
 
         for k, length in odd_pair_paths.items():
             i,j = k
-            g_odd_nodes.add_edge(i, j, **{'length': length, 'weight': -length})
+            attrs = {
+                'length': length,
+                'weight': -length,
+            }
+
+            g_odd_nodes.add_edge(i, j, **attrs)
             pass
 
-        log.info('new nodes=%s, edges=%s', g_odd_nodes.order(), g_odd_nodes.size())
+        log.info('new_nodes=%s, edges=%s, eulerian=%s', g_odd_nodes.order(), g_odd_nodes.size(), nx.is_eulerian(g_odd_nodes))
 
-        log.info('(odd complete) eulerian=%s', nx.is_eulerian(g_odd_nodes))
-
-        #
-        # find min weight matching
-        #
         log.info('calculating max weight matching - this can also take a while')
 
         odd_matching = nx.algorithms.max_weight_matching(g_odd_nodes, True)
 
+        log.info('len(odd_matching)=%s', len(odd_matching))
         log.debug('odd_matching=%s', odd_matching)
-        log.info('len=%s', len(odd_matching))
 
-        #
-        # augment original graph
-        #
         log.info('augment original')
 
         graph_aug = self.augment_graph(self.g, odd_matching)
@@ -282,29 +297,21 @@ class Burbing:
 
         euler_circuit = list(nx.eulerian_circuit(graph_aug, source=start_node))
 
-        results = []
-        #log.debug('euler_circuit=%s', euler_circuit)
-
         return graph_aug, euler_circuit
-
-        return
 
     ##
     ##
     def reverse_linestring(self, line):
 
-        # surely there has to be a better built-in way to do this?
-
-        coords = list(line.coords)[::-1]
-        enil = shapely.geometry.LineString(coords)
-        log.debug('reversing linestring line=%s', line)
-        log.debug('  -> line=%s', enil)
-
-        return enil
+        return shapely.geometry.LineString(line.coords[::-1])
 
     ##
     ##
     def directional_linestring(self, g, edge):
+
+        # return a linestring that points in the same direction as the
+        # nodes of the specified edge.
+
         u, v = edge
         data = g.get_edge_data(u, v, 0)
         if data is None:
@@ -340,6 +347,12 @@ class Burbing:
     ##
     ##
     def path_to_linestring(self, g, path):
+
+        # this creates a new linestring that follows the path of the
+        # augmented route between two odd nodes.  this is needed to
+        # force a path with the final GPX route, rather than drawing a
+        # straight line between the two odd nodes and hoping some
+        # other program route the same way we wanted to.
 
         coords = []
         prev = None
@@ -377,7 +390,10 @@ class Burbing:
     ##
     def prune(self):
 
-        # eliminate edges with unnamed tracks..
+        # eliminate edges with unnamed tracks.  At least where I live,
+        # these tend to be 4wd tracks that require a mountain bike to
+        # navigate.  probably need to do a better fitler that looks at
+        # surface type and other aspects.
 
         remove_types = ('track', 'path')
 
@@ -400,11 +416,10 @@ class Burbing:
             self.g.remove_edge(*edge)
             pass
 
-        # XXX - this might not work. the idea of pruning edge types by
-        # tags after loading might not be right.. A better idea might
-        # be to fiddle with filters before fetching the OSM data, or
-        # look further into the features in osmnx to prune orphaned
-        # nodes.
+        # this removes the isolated nodes orphaned from the removed
+        # edges above.  It does not solve the problem of a
+        # non-connected graph (ie, nodes and edges in a blob that
+        # aren't reachable to other parts of the graph)
 
         self.g = osmnx.utils_graph.remove_isolated_nodes(self.g)
         return
@@ -413,13 +428,13 @@ class Burbing:
     ##
     def save_fig(self):
 
-        filepath = f'{self.name}-nodes.svg'
+        filename = f'burb_nodes_{self.name}.svg'
 
-        log.info('saving SVG node file as %s', filepath)
+        log.info('saving SVG node file as %s', filename)
 
         nc = ['red' if node in self.odd_nodes else 'blue' for node in self.g.nodes() ]
 
-        fig, ax = osmnx.plot_graph(self.g, show=False, save=True, node_color=nc, filepath=filepath)
+        fig, ax = osmnx.plot_graph(self.g, show=False, save=True, node_color=nc, filepath=filename)
 
         return
 
@@ -529,19 +544,13 @@ class Burbing:
         segment = gpxpy.gpx.GPXTrackSegment()
         track.segments.append(segment)
 
-        #route.comment = ''
-        #route.source = ''
-        #route.name = ''
-
         distance = 0.0
-
         i = 1
 
         for n, edge in enumerate(edges):
 
             u, v = edge
             edge_data = g.get_edge_data(*edge, 0)
-            #directed_edge_data = self.g_directed.get_edge_data(*edge, 0)
 
             log.debug('EDGE [%d] - edge=%s, data=%s', n, edge, edge_data)
 
@@ -549,29 +558,14 @@ class Burbing:
                 log.warning('null data for edge %s', edge)
                 continue
 
-            name = edge_data.get('name', '')
-            _highway = edge_data.get('highway', '')
             linestring = edge_data.get('geometry')
-            node_from = edge_data.get('from')
-            node_to = edge_data.get('to')
-
-            _surface = edge_data.get('surface', '')
-            _oneway = edge_data.get('oneway', '')
-            _access = edge_data.get('access', '')
-            _distance = edge_data.get('length', 0)
-
-            distance += _distance
-
-            log.debug(' leg [%d] -> %s (%s,%s,%s,%s,%s)', n, name, _highway, _surface, _oneway, _access, _distance)
-
-            #linestring = edge_data.get('geometry')
             augmented = edge_data.get('augmented')
+            distance += edge_data.get('length', 0)
 
-            ## how do we know that we're going in the rigth direction??
-
-            log.debug('  edge=%s, augmented=%s, from=%s, to=%s, linestring=%s', edge, augmented, node_from, node_to, linestring)
+            log.debug(' leg [%d] -> %s (%s,%s,%s,%s,%s)', n, edge_data.get('name', ''), edge_data.get('highway', ''), edge_data.get('surface', ''), edge_data.get('oneway', ''), edge_data.get('access', ''), edge_data.get('length', 0))
 
             if linestring:
+
                 directional_linestring = self.directional_linestring(g, edge)
 
                 for lon, lat in directional_linestring.coords:
@@ -582,12 +576,7 @@ class Burbing:
                 pass
             else:
                 log.error('  no linestring for edge=%s', edge)
-                #lat = g.nodes[u]['y']
-                #lon = g.nodes[v]['x']
-                #segment.points.append(gpxpy.gpx.GPXRoutePoint(latitude=lat, longitude=lon))
                 pass
-
-            #log.info('lat=%s, lon=%s, edge=%s, name=%s, highway=%s', lat, lon, edge, name, highway)
 
             pass
 
