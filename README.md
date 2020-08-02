@@ -121,3 +121,19 @@ loading into head units to see where you're going.
 
 You can also save the SVG node file, which shows the various
 intersections and other OSM points.
+
+## Lockdown radius
+
+If you want to confine your route to a radius around a point (eg, 5km around your house), the following trick should work:
+
+* specify the start location.
+* specify the destination as an exact address instead of a suburb name
+* add a 5km buffer around the location
+
+like this:
+
+```bash
+./optiburb.py --debug=debug --save-fig --save-boundary --start '23 main rd, suburb, state, country' --buffer 5000 '23 main rd, suburb, state, country'
+```
+
+For very dense suburbs, this might be huge.

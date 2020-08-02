@@ -241,11 +241,10 @@ class Burbing:
 
     ##
     ##
-    def determine(self):
+    def determine_nodes(self):
 
         self.g_directed = self.g
         self.g = osmnx.utils_graph.get_undirected(self.g_directed)
-
 
         self.print_edges(self.g)
 
@@ -266,7 +265,7 @@ class Burbing:
         # because we want minimum distances but only maximum algorithm
         # exists in networkx.
 
-        g_odd_nodes = nx.Graph()
+        self.g_odd_nodes = nx.Graph()
 
         for k, length in odd_pair_paths.items():
             i,j = k
@@ -275,29 +274,35 @@ class Burbing:
                 'weight': -length,
             }
 
-            g_odd_nodes.add_edge(i, j, **attrs)
+            self.g_odd_nodes.add_edge(i, j, **attrs)
             pass
 
-        log.info('new_nodes=%s, edges=%s, eulerian=%s', g_odd_nodes.order(), g_odd_nodes.size(), nx.is_eulerian(g_odd_nodes))
+        log.info('new_nodes=%s, edges=%s, eulerian=%s', self.g_odd_nodes.order(), self.g_odd_nodes.size(), nx.is_eulerian(self.g_odd_nodes))
 
         log.info('calculating max weight matching - this can also take a while')
 
-        odd_matching = nx.algorithms.max_weight_matching(g_odd_nodes, True)
+        return
+
+    ##
+    ##
+    def determine_circuit(self):
+
+        odd_matching = nx.algorithms.max_weight_matching(self.g_odd_nodes, True)
 
         log.info('len(odd_matching)=%s', len(odd_matching))
         log.debug('odd_matching=%s', odd_matching)
 
         log.info('augment original')
 
-        graph_aug = self.augment_graph(self.g, odd_matching)
+        self.g_augmented = self.augment_graph(self.g, odd_matching)
 
         start_node = self.get_start_node(self.g, self.start)
 
-        log.info('(augmented) eulerian=%s', nx.is_eulerian(graph_aug))
+        log.info('(augmented) eulerian=%s', nx.is_eulerian(self.g_augmented))
 
-        euler_circuit = list(nx.eulerian_circuit(graph_aug, source=start_node))
+        self.euler_circuit = list(nx.eulerian_circuit(self.g_augmented, source=start_node))
 
-        return graph_aug, euler_circuit
+        return
 
     ##
     ##
@@ -615,8 +620,8 @@ if __name__ == '__main__':
     parser.add_argument('--select', type=int, default=1, help='select the nth item from the search results. a truely awful hack because i cant work out how to search for administrative boundaries.')
     parser.add_argument('--shapefile', type=str, default=None, help='filename of shapefile to load localities, comma separated by the column to match on')
     parser.add_argument('--buffer', type=int, dest='buffer', default=20, help='buffer distsance around polygon')
-    parser.add_argument('--save-fig', default='False', action='store_true', help='save an SVG image of the nodes and edges')
-    parser.add_argument('--save-boundary', default='False', action='store_true', help='save a GPX file of the suburb boundary')
+    parser.add_argument('--save-fig', default=False, action='store_true', help='save an SVG image of the nodes and edges')
+    parser.add_argument('--save-boundary', default=False, action='store_true', help='save a GPX file of the suburb boundary')
 
     args = parser.parse_args()
 
@@ -668,12 +673,15 @@ if __name__ == '__main__':
         burbing.prune()
         pass
 
-    graph_aug, euler_circuit = burbing.determine()
-    burbing.create_gpx_track(graph_aug, euler_circuit, args.simplify_gpx)
+    burbing.determine_nodes()
 
     if args.save_fig:
         burbing.save_fig()
         pass
+
+    burbing.determine_circuit()
+
+    burbing.create_gpx_track(burbing.g_augmented, burbing.euler_circuit, args.simplify_gpx)
 
     pass
 
