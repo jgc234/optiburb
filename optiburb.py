@@ -250,6 +250,10 @@ class Burbing:
 
         self.odd_nodes = self.find_odd_nodes()
 
+        return
+
+    def determine_combinations(self):
+
         log.info('eulerian=%s, odd_ndoes=%s', nx.is_eulerian(self.g), len(self.odd_nodes))
 
         odd_node_pairs = self.get_pair_combinations(self.odd_nodes)
@@ -679,6 +683,8 @@ if __name__ == '__main__':
         burbing.save_fig()
         pass
 
+    burbing.determine_combinations()
+    
     burbing.determine_circuit()
 
     burbing.create_gpx_track(burbing.g_augmented, burbing.euler_circuit, args.simplify_gpx)

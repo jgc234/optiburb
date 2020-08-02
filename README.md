@@ -135,9 +135,9 @@ like this:
 
 ```bash
 ./optiburb.py --debug=debug --save-fig --save-boundary \
- --start '23 main rd, suburb, state, country' \
+ --start "23 main rd, suburb, state, country" \
  --buffer 5000 \
- '23 main rd, suburb, state, country'
+ "23 main rd, suburb, state, country"
 ```
 
 For very dense suburbs, this might be huge.
