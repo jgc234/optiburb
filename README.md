@@ -110,7 +110,8 @@ the shapefile is from the Australian Government with state locality
 boundaries.
 
 ```bash
-./optiburb.py --save-fig --save-boundary --prune --shapefile ~/Projects/gis/VIC_LOCALITY_POLYGON_shp,vic_loca_2 KEW
+./optiburb.py --save-fig --save-boundary --prune \
+  --shapefile ~/Projects/gis/VIC_LOCALITY_POLYGON_shp,vic_loca_2 KEW
 ```
 
 Pruning a route will attempt to remove unnamed tracks, which tend to
@@ -133,7 +134,10 @@ If you want to confine your route to a radius around a point (eg, 5km around you
 like this:
 
 ```bash
-./optiburb.py --debug=debug --save-fig --save-boundary --start '23 main rd, suburb, state, country' --buffer 5000 '23 main rd, suburb, state, country'
+./optiburb.py --debug=debug --save-fig --save-boundary \
+ --start '23 main rd, suburb, state, country' \
+ --buffer 5000 \
+ '23 main rd, suburb, state, country'
 ```
 
 For very dense suburbs, this might be huge.
