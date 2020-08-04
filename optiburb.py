@@ -23,7 +23,7 @@ import gpxpy
 import gpxpy.gpx
 import datetime
 
-logging.basicConfig(format='%(asctime)-15s %(filename)s:%(funcName)s:%(lineno)s [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S', level=logging.DEBUG)
+logging.basicConfig(format='%(asctime)-15s %(filename)s:%(funcName)s:%(lineno)s [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S', level=logging.INFO)
 log = logging.getLogger(__name__)
 
 class Burbing:
@@ -49,7 +49,8 @@ class Burbing:
 
             '["area"!~"yes"]'
 
-            '["highway"!~"motorway|motorway_link|trunk|trunk_link|bridleway|footway|service|pedestrian|'
+            #'["highway"!~"motorway|motorway_link|trunk|trunk_link|bridleway|footway|service|pedestrian|'
+            '["highway"!~"motorway|motorway_link|bridleway|footway|service|pedestrian|'
             'steps|stairs|escalator|elevator|construction|proposed|demolished|escape|bus_guideway|'
             'sidewalk|crossing|bus_stop|traffic_signals|stop|give_way|milestone|platform|speed_camera|'
             'raceway|rest_area|traffic_island|services|yes|no|drain|street_lamp|razed|corridor|abandoned"]'
@@ -170,8 +171,10 @@ class Burbing:
 
         shortest_paths = {}
 
-        _cur_pct = 0
+        _prev_pct = 0
         _size = len(pairs)
+        _prev_n = 0
+        _prev_time = time.time()
 
         for n, pair in enumerate(pairs):
             i, j = pair
@@ -179,10 +182,14 @@ class Burbing:
 
             ## output progress
 
-            _pct = int(100 * n / _size)
-            if _pct != _cur_pct:
-                _cur_pct = _pct
-                log.debug('dijkstra progress %s%%, [%d/%d]', _pct, n, _size)
+            _cur_pct = int(100 * n / _size)
+            if _prev_pct != _cur_pct:
+                _cur_time = time.time()
+                log.debug('dijkstra progress %s%%, [%d/%d] %d/second', _cur_pct, n, _size, (_prev_n - n) / (_prev_time - _cur_time))
+
+                _prev_time = _cur_time
+                _prev_pct = _cur_pct
+                _prev_n = n
                 pass
             pass
 
@@ -196,7 +203,7 @@ class Burbing:
         # between odd pairs.  Generate the edge metadata to make them
         # look similar to the native edges.
 
-        log.info('(augmented) eulerian=%s', nx.is_eulerian(self.g_augmented))
+        log.info('pre augmentation eulerian=%s', nx.is_eulerian(self.g_augmented))
 
         for i, pair in enumerate(pairs):
             a, b = pair
@@ -221,6 +228,8 @@ class Burbing:
 
             self.g_augmented.add_edge(a, b, **data)
             pass
+
+        log.info('post augmentation eulerian=%s', nx.is_eulerian(self.g_augmented))
 
         return
 
@@ -289,8 +298,9 @@ class Burbing:
             for neighbour in neighbours.keys():
                 log.debug('neighbour=%s', neighbour)
 
-                edge_data = self.g.get_edge_data(deadend, neighbour, 0)
-
+                edge_data = dict(self.g.get_edge_data(deadend, neighbour, 0))
+                edge_data['augmented'] = True
+                
                 log.debug('  creating new edge (%s,%s) - data=%s', deadend, neighbour, edge_data)
 
                 self.g.add_edge(deadend, neighbour, **edge_data)
@@ -354,16 +364,11 @@ class Burbing:
 
         odd_matching = nx.algorithms.max_weight_matching(self.g_odd_nodes, True)
 
-        log.info('len(odd_matching)=%s', len(odd_matching))
-        log.debug('odd_matching=%s', odd_matching)
-
-        log.info('augment original')
+        log.info('augment original graph with %s pairs', len(odd_matching))
 
         self.augment_graph(odd_matching)
 
         start_node = self.get_start_node(self.g, self.start)
-
-        log.info('(augmented) eulerian=%s', nx.is_eulerian(self.g_augmented))
 
         self.euler_circuit = list(nx.eulerian_circuit(self.g_augmented, source=start_node))
 
@@ -600,6 +605,10 @@ class Burbing:
 
         # create GPX XML.
 
+        stats_distance = 0.0
+        stats_backtrack = 0.0
+        stats_deadends = 0
+
         gpx = gpxpy.gpx.GPX()
         gpx.name = f'burb {self.name}'
         gpx.author_name = 'optiburb'
@@ -614,7 +623,6 @@ class Burbing:
         segment = gpxpy.gpx.GPXTrackSegment()
         track.segments.append(segment)
 
-        distance = 0.0
         i = 1
 
         for n, edge in enumerate(edges):
@@ -630,7 +638,7 @@ class Burbing:
 
             linestring = edge_data.get('geometry')
             augmented = edge_data.get('augmented')
-            distance += edge_data.get('length', 0)
+            stats_distance += edge_data.get('length', 0)
 
             log.debug(' leg [%d] -> %s (%s,%s,%s,%s,%s)', n, edge_data.get('name', ''), edge_data.get('highway', ''), edge_data.get('surface', ''), edge_data.get('oneway', ''), edge_data.get('access', ''), edge_data.get('length', 0))
 
@@ -648,10 +656,15 @@ class Burbing:
                 log.error('  no linestring for edge=%s', edge)
                 pass
 
+            if edge_data.get('augmented', False):
+                stats_backtrack += edge_data.get('length', 0)
+                pass
+
             pass
 
-        log.info('total distance = %.1fkm', distance/1000.0)
-
+        log.info('total distance = %.2fkm', stats_distance/1000.0)
+        log.info('backtrack distance = %.2fkm', stats_backtrack/1000.0)
+        
         ##
         ##
         if simplify:
