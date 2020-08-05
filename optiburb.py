@@ -185,7 +185,7 @@ class Burbing:
             _cur_pct = int(100 * n / _size)
             if _prev_pct != _cur_pct:
                 _cur_time = time.time()
-                log.debug('dijkstra progress %s%%, [%d/%d] %d/second', _cur_pct, n, _size, (_prev_n - n) / (_prev_time - _cur_time))
+                log.info('dijkstra progress %s%%, [%d/%d] %d/second', _cur_pct, n, _size, (_prev_n - n) / (_prev_time - _cur_time))
 
                 _prev_time = _cur_time
                 _prev_pct = _cur_pct
