@@ -21,9 +21,9 @@ import itertools
 import argparse
 import gpxpy
 import gpxpy.gpx
+import datetime
 
-
-logging.basicConfig(format='%(asctime)-15s %(filename)s:%(funcName)s:%(lineno)s [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S', level=logging.DEBUG)
+logging.basicConfig(format='%(asctime)-15s %(filename)s:%(funcName)s:%(lineno)s [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S', level=logging.INFO)
 log = logging.getLogger(__name__)
 
 class Burbing:
@@ -39,7 +39,6 @@ class Burbing:
         self.name = ''
         self.start = None
 
-
         #
         # filters to roughly match those used by rendrer.earth (see
         # https://wandrer.earth/scoring )
@@ -50,7 +49,8 @@ class Burbing:
 
             '["area"!~"yes"]'
 
-            '["highway"!~"motorway|motorway_link|trunk|trunk_link|bridleway|footway|service|pedestrian|'
+            #'["highway"!~"motorway|motorway_link|trunk|trunk_link|bridleway|footway|service|pedestrian|'
+            '["highway"!~"motorway|motorway_link|bridleway|footway|service|pedestrian|'
             'steps|stairs|escalator|elevator|construction|proposed|demolished|escape|bus_guideway|'
             'sidewalk|crossing|bus_stop|traffic_signals|stop|give_way|milestone|platform|speed_camera|'
             'raceway|rest_area|traffic_island|services|yes|no|drain|street_lamp|razed|corridor|abandoned"]'
@@ -100,7 +100,7 @@ class Burbing:
             pass
 
         processed_name = name.lower()
-        processed_name = re.sub(r'[\s+,]+', '_', processed_name)
+        processed_name = re.sub(r'[\s,_]+', '_', processed_name)
 
         self.name += processed_name
 
@@ -164,10 +164,17 @@ class Burbing:
     ##
     def get_shortest_path_pairs(self, g, pairs):
 
+        # XXX - consider Floyd–Warshall here instead of repeated
+        # Dijkstra.  Also consider how to parallelise this as a
+        # short-term speed-up, by palming off chunks to another
+        # thread, except this wont work in python.
+
         shortest_paths = {}
 
-        _cur_pct = 0
+        _prev_pct = 0
         _size = len(pairs)
+        _prev_n = 0
+        _prev_time = time.time()
 
         for n, pair in enumerate(pairs):
             i, j = pair
@@ -175,10 +182,14 @@ class Burbing:
 
             ## output progress
 
-            _pct = int(100 * n / _size)
-            if _pct != _cur_pct:
-                _cur_pct = _pct
-                log.debug('dijkstra progress %s%%, [%d/%d]', _pct, n, _size)
+            _cur_pct = int(100 * n / _size)
+            if _prev_pct != _cur_pct:
+                _cur_time = time.time()
+                log.info('dijkstra progress %s%%, [%d/%d] %d/second', _cur_pct, n, _size, (_prev_n - n) / (_prev_time - _cur_time))
+
+                _prev_time = _cur_time
+                _prev_pct = _cur_pct
+                _prev_n = n
                 pass
             pass
 
@@ -186,24 +197,22 @@ class Burbing:
 
     ##
     ##
-    def augment_graph(self, g, pairs):
+    def augment_graph(self, pairs):
 
         # create a new graph and stuff in the new fake/virtual edges
         # between odd pairs.  Generate the edge metadata to make them
         # look similar to the native edges.
 
-        graph_aug = g.copy()
-
-        log.info('(augmented) eulerian=%s', nx.is_eulerian(graph_aug))
+        log.info('pre augmentation eulerian=%s', nx.is_eulerian(self.g_augmented))
 
         for i, pair in enumerate(pairs):
             a, b = pair
 
-            length, path = nx.single_source_dijkstra(g, a, b, weight='length')
+            length, path = nx.single_source_dijkstra(self.g, a, b, weight='length')
 
             log.debug('PAIR[%s] nodes = (%s,%s), length=%s, path=%s', i, a, b, length, path)
 
-            linestring = self.path_to_linestring(graph_aug, path)
+            linestring = self.path_to_linestring(self.g_augmented, path)
 
             # create a linestring of paths...
 
@@ -217,10 +226,12 @@ class Burbing:
             }
             log.debug('  creating new edge (%s,%s) - data=%s', a, b, data)
 
-            graph_aug.add_edge(a, b, **data)
+            self.g_augmented.add_edge(a, b, **data)
             pass
 
-        return graph_aug
+        log.info('post augmentation eulerian=%s', nx.is_eulerian(self.g_augmented))
+
+        return
 
 
     ##
@@ -248,13 +259,74 @@ class Burbing:
 
         self.print_edges(self.g)
 
+        self.g_augmented = self.g.copy()
+
         self.odd_nodes = self.find_odd_nodes()
 
         return
 
+
+    ##
+    ##
+    def optimise_dead_ends(self):
+
+        # preempt virtual path augmentation for the case of a dead-end
+        # road.  Here the optimum combination pair is its only
+        # neighbour node, so why bother iterating through all the
+        # pairs to find that.
+
+        # XXX - not quite clean yet.. we are augmenting the original
+        # grpah.. need a cleaner way to pass changes through the
+        # processing pipeline.
+
+        deadends = { i for i, n in self.g.degree if n == 1 }
+
+        n1 = len(self.find_odd_nodes())
+
+        for deadend in deadends:
+
+            neighbours = self.g[deadend]
+
+            #node_data = self.g.nodes[deadend]
+            #log.info('deadend_ndoe=%s, data=%s', deadend, node_data)
+            log.debug('deadend_node=%s', deadend)
+
+            if len(neighbours) != 1:
+                log.error('wrong number of neighbours for a dead-end street')
+                continue
+
+            for neighbour in neighbours.keys():
+                log.debug('neighbour=%s', neighbour)
+
+                edge_data = dict(self.g.get_edge_data(deadend, neighbour, 0))
+                edge_data['augmented'] = True
+                
+                log.debug('  creating new edge (%s,%s) - data=%s', deadend, neighbour, edge_data)
+
+                self.g.add_edge(deadend, neighbour, **edge_data)
+
+                pass
+
+            pass
+
+        # fix up the stuff we just busted.  XXX - this should not be
+        # hidden in here.
+
+        self.odd_nodes = self.find_odd_nodes()
+        self.g_augmented = self.g.copy()
+
+        n2 = len(self.odd_nodes)
+
+        log.info('odd_nodes_before=%d, odd_nodes_after=%d', n1, n2)
+        log.info('optimised %d nodes out', n1 - n2)
+
+        return
+
+    ##
+    ##
     def determine_combinations(self):
 
-        log.info('eulerian=%s, odd_ndoes=%s', nx.is_eulerian(self.g), len(self.odd_nodes))
+        log.info('eulerian=%s, odd_nodes=%s', nx.is_eulerian(self.g), len(self.odd_nodes))
 
         odd_node_pairs = self.get_pair_combinations(self.odd_nodes)
 
@@ -265,9 +337,8 @@ class Burbing:
         # XXX - this part doesn't work well because it doesn't
         # consider the direction of the paths.
 
-        # create another graph off odd pairs.. using negative weights
-        # because we want minimum distances but only maximum algorithm
-        # exists in networkx.
+        # create a temporary graph of odd pairs.. really we should be
+        # doing the combination max calculations here.
 
         self.g_odd_nodes = nx.Graph()
 
@@ -293,16 +364,11 @@ class Burbing:
 
         odd_matching = nx.algorithms.max_weight_matching(self.g_odd_nodes, True)
 
-        log.info('len(odd_matching)=%s', len(odd_matching))
-        log.debug('odd_matching=%s', odd_matching)
+        log.info('augment original graph with %s pairs', len(odd_matching))
 
-        log.info('augment original')
-
-        self.g_augmented = self.augment_graph(self.g, odd_matching)
+        self.augment_graph(odd_matching)
 
         start_node = self.get_start_node(self.g, self.start)
-
-        log.info('(augmented) eulerian=%s', nx.is_eulerian(self.g_augmented))
 
         self.euler_circuit = list(nx.eulerian_circuit(self.g_augmented, source=start_node))
 
@@ -539,6 +605,10 @@ class Burbing:
 
         # create GPX XML.
 
+        stats_distance = 0.0
+        stats_backtrack = 0.0
+        stats_deadends = 0
+
         gpx = gpxpy.gpx.GPX()
         gpx.name = f'burb {self.name}'
         gpx.author_name = 'optiburb'
@@ -553,7 +623,6 @@ class Burbing:
         segment = gpxpy.gpx.GPXTrackSegment()
         track.segments.append(segment)
 
-        distance = 0.0
         i = 1
 
         for n, edge in enumerate(edges):
@@ -569,7 +638,7 @@ class Burbing:
 
             linestring = edge_data.get('geometry')
             augmented = edge_data.get('augmented')
-            distance += edge_data.get('length', 0)
+            stats_distance += edge_data.get('length', 0)
 
             log.debug(' leg [%d] -> %s (%s,%s,%s,%s,%s)', n, edge_data.get('name', ''), edge_data.get('highway', ''), edge_data.get('surface', ''), edge_data.get('oneway', ''), edge_data.get('access', ''), edge_data.get('length', 0))
 
@@ -587,10 +656,15 @@ class Burbing:
                 log.error('  no linestring for edge=%s', edge)
                 pass
 
+            if edge_data.get('augmented', False):
+                stats_backtrack += edge_data.get('length', 0)
+                pass
+
             pass
 
-        log.info('total distance = %.1fkm', distance/1000.0)
-
+        log.info('total distance = %.2fkm', stats_distance/1000.0)
+        log.info('backtrack distance = %.2fkm', stats_backtrack/1000.0)
+        
         ##
         ##
         if simplify:
@@ -626,12 +700,15 @@ if __name__ == '__main__':
     parser.add_argument('--buffer', type=int, dest='buffer', default=20, help='buffer distsance around polygon')
     parser.add_argument('--save-fig', default=False, action='store_true', help='save an SVG image of the nodes and edges')
     parser.add_argument('--save-boundary', default=False, action='store_true', help='save a GPX file of the suburb boundary')
+    parser.add_argument('--feature-deadend', default=False, action='store_true', help='experimental feature to optimised deadends in solution')
 
     args = parser.parse_args()
 
     log.setLevel(logging.getLevelName(args.debug.upper()))
 
     log.debug('called with args - %s', args)
+
+    start_time = datetime.datetime.now()
 
     burbing = Burbing()
 
@@ -679,15 +756,23 @@ if __name__ == '__main__':
 
     burbing.determine_nodes()
 
+    if args.feature_deadend:
+        burbing.optimise_dead_ends()
+        pass
+
     if args.save_fig:
         burbing.save_fig()
         pass
 
     burbing.determine_combinations()
-    
+
     burbing.determine_circuit()
 
     burbing.create_gpx_track(burbing.g_augmented, burbing.euler_circuit, args.simplify_gpx)
+
+    end_time = datetime.datetime.now()
+
+    log.info('elapsed time = %s', end_time - start_time)
 
     pass
 
