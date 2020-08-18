@@ -100,7 +100,7 @@ class Burbing:
             pass
 
         processed_name = name.lower()
-        processed_name = re.sub(r'[\s+,]+', '_', processed_name)
+        processed_name = re.sub(r'[\s,_]+', '_', processed_name)
 
         self.name += processed_name
 
