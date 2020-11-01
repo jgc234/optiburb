@@ -112,7 +112,7 @@ class Burbing:
 
         log.info('searching for query=%s, which_result=%s', name, select)
 
-        gdf = osmnx.gdf_from_place(name, buffer_dist=buffer_dist, which_result=select)
+        gdf = osmnx.geocode_to_gdf(name, buffer_dist=buffer_dist, which_result=select)
         log.info('gdf=%s', gdf)
 
         polygon = gdf.geometry.values[0]
