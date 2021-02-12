@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.8
+#!/usr/bin/env python3.9
 
 # this is a undirected graph version.. one-way streets and multi-edges
 # are reduced, which means:
@@ -139,7 +139,7 @@ class Burbing:
     ##
     def set_start_location(self, addr):
 
-        point =  osmnx.utils_geo.geocode(addr)
+        point =  osmnx.geocoder.geocode(addr)
         self.start = point
         log.info('setting start point to %s', self.start)
         return
