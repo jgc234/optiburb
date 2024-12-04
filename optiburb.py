@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.9
+#!/usr/bin/env python3
 
 # this is a undirected graph version.. one-way streets and multi-edges
 # are reduced, which means:
@@ -11,91 +11,85 @@ import time
 import os
 import sys
 import re
-import shapely
+import datetime
+import argparse
 import logging
-import geopandas
+import itertools
+
+import osmnx.settings
+import shapely
+# import geopandas
 import osmnx
 import networkx as nx
 import numpy as np
-import itertools
-import argparse
 import gpxpy
 import gpxpy.gpx
-import datetime
 
 logging.basicConfig(format='%(asctime)-15s %(filename)s:%(funcName)s:%(lineno)s [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S', level=logging.INFO)
 log = logging.getLogger(__name__)
 
 class Burbing:
-
-    WARNING = '''WARNING - this program does not consider the direction of one-way roads or other roads that may be not suitable for your mode of transport. You must confirm the path safe for yourself'''
-
+    
+    WARNING = (
+        'WARNING - this program does not consider the direction of one-way'
+        'roads or other roads that may be not suitable for your mode of'
+        'transport. You must confirm the path safe for yourself'
+    )
+    
     def __init__(self):
-
+        
         self.g = None
-
+        
         self.polygons = {}
         self.region = shapely.geometry.Polygon()
         self.name = ''
         self.start = None
-
-        #
-        # filters to roughly match those used by rendrer.earth (see
+        
+        # filters to roughly match those used by wandrer.earth (see
         # https://wandrer.earth/scoring )
         #
         self.custom_filter = (
-
             '["highway"]'
-
             '["area"!~"yes"]'
-
-            #'["highway"!~"motorway|motorway_link|trunk|trunk_link|bridleway|footway|service|pedestrian|'
             '["highway"!~"motorway|motorway_link|bridleway|footway|service|pedestrian|'
             'steps|stairs|escalator|elevator|construction|proposed|demolished|escape|bus_guideway|'
             'sidewalk|crossing|bus_stop|traffic_signals|stop|give_way|milestone|platform|speed_camera|'
             'raceway|rest_area|traffic_island|services|yes|no|drain|street_lamp|razed|corridor|abandoned"]'
-
             '["access"!~"private|no|customers"]'
-
             '["bicycle"!~"dismount|use_sidepath|private|no"]'
-
             '["service"!~"private|parking_aisle"]'
-
             '["motorroad"!="yes"]'
-
             '["golf_cart"!~"yes|designated|private"]'
-
             '[!"waterway"]'
-
             '[!"razed"]'
         )
-
-
+        
         log.debug('custom_filter=%s', self.custom_filter)
-
+        
         # not all of these fields are used at the moment, but they
         # look like fun for the future.
-
+        #
         useful_tags_way = [
             'bridge', 'tunnel', 'oneway', 'lanes', 'ref', 'name', 'highway', 'maxspeed', 'service',
             'access', 'area', 'landuse', 'width', 'est_width', 'junction', 'surface',
         ]
-
-        osmnx.utils.config(useful_tags_way=useful_tags_way, use_cache=True, log_console=True)
-
+        
+        osmnx.settings.useful_tags_way=useful_tags_way
+        osmnx.settings.use_cache=True
+        osmnx.settings.log_console=True
+        
         log.warning(self.WARNING)
-
+        
         return
 
     ##
     ##
-    def add_polygon(self, polygon, name):
+    def add_polygon(self, polygon, name: str):
 
         self.polygons[name] = polygon
-
         self.region = self.region.union(polygon)
 
-        if self.name:
+        if self.name is not None:
             self.name += '_'
             pass
 
@@ -255,9 +249,9 @@ class Burbing:
     def determine_nodes(self):
 
         self.g_directed = self.g
-        self.g = osmnx.utils_graph.get_undirected(self.g_directed)
+        self.g = self.g_directed.to_undirected()
 
-        self.print_edges(self.g)
+        # self.print_edges(self.g)
 
         self.g_augmented = self.g.copy()
 
@@ -388,7 +382,7 @@ class Burbing:
         # nodes of the specified edge.
 
         u, v = edge
-        data = g.get_edge_data(u, v, 0)
+        data = g.get_edge_data(u, v)
         if data is None:
             log.error('no data for edge %s', edge)
             return None
@@ -401,6 +395,8 @@ class Burbing:
 
         if (u, v) == (node_to, node_from):
             return self.reverse_linestring(data.get('geometry'))
+        
+        log.error('edge=%s, to=%s, from=%s', edge, node_to, node_from)
 
         log.error('failed to match start and end for directional linestring edge=%s, linestring=%s', edge, data)
 
@@ -445,6 +441,8 @@ class Burbing:
             if data is None:
                 log.error('missing data for edge (%s, %s)', u, v)
                 continue
+
+            log.debug('data=%s', data)
 
             linestring = data.get('geometry')
             directional_linestring = self.directional_linestring(g, edge)
@@ -515,10 +513,22 @@ class Burbing:
 
     ##
     ##
-    def load(self, options):
+    def load(self, options) -> None:
 
         log.info('fetching OSM data bounded by polygon')
-        self.g = osmnx.graph_from_polygon(self.region, network_type='bike', simplify=False, custom_filter=self.custom_filter)
+
+        # g is networkx.MultiDiGraph
+        self.g = osmnx.graph_from_polygon(
+            self.region,
+            simplify=False,
+            retain_all=False,
+            truncate_by_edge=True,
+            custom_filter=self.custom_filter
+        )
+
+        for edge in self.g.edges.values():
+            log.info('edge - %s', edge)
+            pass
 
         log.debug('original g=%s, g=%s', self.g, type(self.g))
         log.info('original nodes=%s, edges=%s', self.g.order(), self.g.size())
@@ -527,6 +537,11 @@ class Burbing:
             log.info('simplifying graph')
             self.g = osmnx.simplification.simplify_graph(self.g, strict=False, remove_rings=False)
             pass
+
+        for edge in self.g.edges.values():
+            log.info('post simplify edge - %s', edge)
+            pass
+
 
         return
 
@@ -547,7 +562,7 @@ class Burbing:
         df = self.shapefile_df
         key = self.shapefile_key
 
-        suburb = df[df[key] == value]
+        suburb = df[df[key] == name]
         log.info('suburb=%s', suburb)
         suburb = suburb.to_crs(epsg=4326)
         log.info('suburb=%s', suburb)
@@ -574,7 +589,7 @@ class Burbing:
         log.info('saving suburb boundary - %s', filename)
 
         # XXX - add colour?
-
+        
         #xmlns:gpxx="http://www.garmin.com/xmlschemas/GpxExtensions/v3"
         #track.extensions =
         #<extensions>
@@ -701,9 +716,9 @@ if __name__ == '__main__':
     parser.add_argument('--save-fig', default=False, action='store_true', help='save an SVG image of the nodes and edges')
     parser.add_argument('--save-boundary', default=False, action='store_true', help='save a GPX file of the suburb boundary')
     parser.add_argument('--feature-deadend', default=False, action='store_true', help='experimental feature to optimised deadends in solution')
-
+    
     args = parser.parse_args()
-
+    
     log.setLevel(logging.getLevelName(args.debug.upper()))
 
     log.debug('called with args - %s', args)
@@ -720,9 +735,7 @@ if __name__ == '__main__':
     if args.shapefile:
 
         filename, key = args.shapefile.split(',')
-
         log.info('shapefile=%s, key=%s', filename, key)
-
         shapefile = burbing.load_shapefile(filename)
 
         for name in args.names:
