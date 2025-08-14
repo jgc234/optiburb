@@ -14,19 +14,27 @@ import shapely
 import logging
 import osmnx
 import networkx as nx
-import numpy as np
 import itertools
 import argparse
 import gpxpy
 import gpxpy.gpx
 import datetime
 
-logging.basicConfig(format='%(asctime)-15s %(filename)s:%(funcName)s:%(lineno)s [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S', level=logging.INFO)
+logging.basicConfig(
+    format='%(asctime)-15s %(filename)s:%(funcName)s:%(lineno)s [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    level=logging.INFO
+)
+
 log = logging.getLogger(__name__)
 
 class Burbing:
 
-    WARNING = '''WARNING - this program does not consider the direction of one-way roads or other roads that may be not suitable for your mode of transport. You must confirm the path safe for yourself'''
+    WARNING = (
+        'WARNING - this program does not consider the direction of one-way roads '
+        'or other roads that may be not suitable for your mode of transport. You '
+        'must confirm the path safe for yourself'
+    )
 
     def __init__(self):
 
@@ -87,7 +95,7 @@ class Burbing:
 
         self.region = self.region.union(polygon)
 
-        if self.name:
+        if self.name is not None:
             self.name += '_'
             pass
 
@@ -524,7 +532,12 @@ class Burbing:
         log.debug('custom_filter=%s', self.custom_filter)
         log.debug('region type=%s', type(self.region))
 
-        self.g_directed: nx.MultiDiGraph = osmnx.graph_from_polygon(self.region, simplify=False, truncate_by_edge=True, custom_filter=self.custom_filter)
+        self.g_directed: nx.MultiDiGraph = osmnx.graph_from_polygon(
+            self.region,
+            simplify=False,
+            truncate_by_edge=True,
+            custom_filter=self.custom_filter
+        )
 
         log.debug('original g=%s, g=%s', self.g, type(self.g))
         log.info('original nodes=%s, edges=%s', self.g_directed.order(), self.g_directed.size())
@@ -545,22 +558,6 @@ class Burbing:
         log.info('df.crs=%s', df.crs)
 
         return df
-
-    ##
-    ##
-    def add_shapefile_region(self, name: str, value: str) -> shapely.geometry.Polygon:
-
-        df = self.shapefile_df
-        key = self.shapefile_key
-
-        suburb = df[df[key] == value]
-        log.info('suburb=%s', suburb)
-        suburb = suburb.to_crs(epsg=4326)
-        log.info('suburb=%s', suburb)
-
-        polygon = suburb['geometry'].values[0]
-
-        return polygon
 
     ##
     ##
