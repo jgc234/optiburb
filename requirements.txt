@@ -5,3 +5,5 @@ networkx
 pandas
 geopandas
 osmnx
+matplotlib
+scikit-learn

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.9
+#!/usr/bin/env python3
 
 # this is a undirected graph version.. one-way streets and multi-edges
 # are reduced, which means:
@@ -6,14 +6,12 @@
 # WARNING - the resulting paths are not guaranteed to be rideable or
 # safe.  You must confirm the path yourself.
 
-import math
 import time
-import os
 import sys
 import re
+import geopandas
 import shapely
 import logging
-import geopandas
 import osmnx
 import networkx as nx
 import numpy as np
@@ -35,7 +33,7 @@ class Burbing:
         self.g = None
 
         self.polygons = {}
-        self.region = shapely.geometry.Polygon()
+        self.region: shapely.geometry.Polygon = shapely.geometry.Polygon()
         self.name = ''
         self.start = None
 
@@ -46,27 +44,19 @@ class Burbing:
         self.custom_filter = (
 
             '["highway"]'
-
             '["area"!~"yes"]'
 
-            #'["highway"!~"motorway|motorway_link|trunk|trunk_link|bridleway|footway|service|pedestrian|'
             '["highway"!~"motorway|motorway_link|bridleway|footway|service|pedestrian|'
             'steps|stairs|escalator|elevator|construction|proposed|demolished|escape|bus_guideway|'
             'sidewalk|crossing|bus_stop|traffic_signals|stop|give_way|milestone|platform|speed_camera|'
             'raceway|rest_area|traffic_island|services|yes|no|drain|street_lamp|razed|corridor|abandoned"]'
 
             '["access"!~"private|no|customers"]'
-
             '["bicycle"!~"dismount|use_sidepath|private|no"]'
-
             '["service"!~"private|parking_aisle"]'
-
             '["motorroad"!="yes"]'
-
             '["golf_cart"!~"yes|designated|private"]'
-
             '[!"waterway"]'
-
             '[!"razed"]'
         )
 
@@ -81,7 +71,9 @@ class Burbing:
             'access', 'area', 'landuse', 'width', 'est_width', 'junction', 'surface',
         ]
 
-        osmnx.utils.config(useful_tags_way=useful_tags_way, use_cache=True, log_console=True)
+        osmnx.settings.useful_tags_way = useful_tags_way
+        osmnx.settings.use_cache = True
+        osmnx.settings.log_console = True
 
         log.warning(self.WARNING)
 
@@ -89,7 +81,7 @@ class Burbing:
 
     ##
     ##
-    def add_polygon(self, polygon, name):
+    def add_polygon(self, polygon: shapely.geometry.Polygon, name: str):
 
         self.polygons[name] = polygon
 
@@ -108,20 +100,25 @@ class Burbing:
 
     ##
     ##
-    def get_osm_polygon(self, name, select=1, buffer_dist=20):
+    def get_osm_polygon(self, name: str, select: int = 1, buffer_dist: int = 20) -> shapely.geometry.Polygon:
 
         log.info('searching for query=%s, which_result=%s', name, select)
 
-        gdf = osmnx.geocode_to_gdf(name, buffer_dist=buffer_dist, which_result=select)
-        log.info('gdf=%s', gdf)
+        gdf = osmnx.geocode_to_gdf(name, which_result=select)
+
+        gdf = gdf.to_crs(epsg=32633)
+        gdf = gdf.buffer(buffer_dist)
+        gdf = gdf.to_crs(epsg=4326)
 
         polygon = gdf.geometry.values[0]
+
+        log.info('polygon=%s', polygon)
 
         return polygon
 
     ##
     ##
-    def get_shapefile_polygon(self, shapefile, key, name):
+    def get_shapefile_polygon(self, shapefile: geopandas.GeoDataFrame, key: str, name: str) -> shapely.geometry.Polygon:
 
         log.info('shapefile=%s, key=%s, name=%s', shapefile, key, name)
 
@@ -132,6 +129,8 @@ class Burbing:
         log.info('suburb=%s', suburb)
 
         polygon = suburb['geometry'].values[0]
+
+        log.info('polygon=%s', polygon)
 
         return polygon
 
@@ -236,26 +235,26 @@ class Burbing:
 
     ##
     ##
-    def print_edges(self, g):
+    def print_edges(self, g: nx.MultiGraph) -> None:
 
         for edge in g.edges:
             data = g.get_edge_data(*edge, 0)
 
-            _osmid = ','.join(data.get('osmid')) if type(data.get('osmid')) == list else str(data.get('osmid'))
-            _name = ','.join(data.get('name')) if type(data.get('name')) == list else str(data.get('name'))
+            _osmid = ','.join(data.get('osmid')) if isinstance(data.get('osmid'), list) else str(data.get('osmid', ''))
+            _name = ','.join(data.get('name')) if isinstance(data.get('name'), list) else str(data.get('name'))
             _highway = data.get('highway', '-')
             _surface = data.get('surface', '-')
             _oneway = data.get('oneway', '-')
             _access = data.get('access', '-')
             log.debug(f'{_osmid:10} {_name:30} {_highway:20} {_surface:10} {_oneway:10} {_access:10}')
             pass
+        return
 
     ##
     ##
-    def determine_nodes(self):
+    def determine_nodes(self) -> None:
 
-        self.g_directed = self.g
-        self.g = osmnx.utils_graph.get_undirected(self.g_directed)
+        self.g: nx.MultiGraph = osmnx.convert.to_undirected(self.g_directed)
 
         self.print_edges(self.g)
 
@@ -408,10 +407,13 @@ class Burbing:
 
     ##
     ##
-    def get_start_node(self, g, start_addr):
+    def get_start_node(self, g, start_addr: tuple[float, float] | None) -> int | None:
+
+        log.info('getting start node for %s', start_addr)
+        log.info('g=%s', g)
 
         if start_addr:
-            (start_node, distance) = osmnx.distance.get_nearest_node(g, start_addr, return_dist=True)
+            start_node, distance = osmnx.distance.nearest_nodes(g, start_addr[0], start_addr[1], return_dist=True)
             log.info('start_node=%s, distance=%s', start_node, distance)
         else:
             start_node = None
@@ -515,24 +517,28 @@ class Burbing:
 
     ##
     ##
-    def load(self, options):
+    def load(self, options) -> None:
 
         log.info('fetching OSM data bounded by polygon')
-        self.g = osmnx.graph_from_polygon(self.region, network_type='bike', simplify=False, custom_filter=self.custom_filter)
+        log.debug('region=%s', self.region)
+        log.debug('custom_filter=%s', self.custom_filter)
+        log.debug('region type=%s', type(self.region))
+
+        self.g_directed: nx.MultiDiGraph = osmnx.graph_from_polygon(self.region, simplify=False, truncate_by_edge=True, custom_filter=self.custom_filter)
 
         log.debug('original g=%s, g=%s', self.g, type(self.g))
-        log.info('original nodes=%s, edges=%s', self.g.order(), self.g.size())
+        log.info('original nodes=%s, edges=%s', self.g_directed.order(), self.g_directed.size())
 
         if options.simplify:
             log.info('simplifying graph')
-            self.g = osmnx.simplification.simplify_graph(self.g, strict=False, remove_rings=False)
+            self.g_directed = osmnx.simplification.simplify_graph(self.g_directed, strict=False, remove_rings=False)
             pass
 
         return
 
     ##
     ##
-    def load_shapefile(self, filename):
+    def load_shapefile(self, filename: str) -> geopandas.GeoDataFrame:
 
         df = geopandas.read_file(filename)
         log.info('df=%s', df)
@@ -542,7 +548,7 @@ class Burbing:
 
     ##
     ##
-    def add_shapefile_region(self, name):
+    def add_shapefile_region(self, name: str, value: str) -> shapely.geometry.Polygon:
 
         df = self.shapefile_df
         key = self.shapefile_key
@@ -558,7 +564,7 @@ class Burbing:
 
     ##
     ##
-    def create_gpx_polygon(self, polygon):
+    def create_gpx_polygon(self, polygon: shapely.geometry.Polygon) -> None:
 
         gpx = gpxpy.gpx.GPX()
         gpx.name = f'boundary {self.name}'
