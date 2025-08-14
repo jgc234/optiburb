@@ -6,4 +6,4 @@ pandas
 geopandas
 osmnx
 matplotlib
-fiona
+scikit-learn
