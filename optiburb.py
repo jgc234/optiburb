@@ -517,7 +517,7 @@ class Burbing:
 
     ##
     ##
-    def load(self, options) -> None:
+    def load(self, simplify: bool) -> None:
 
         log.info('fetching OSM data bounded by polygon')
         log.debug('region=%s', self.region)
@@ -529,7 +529,7 @@ class Burbing:
         log.debug('original g=%s, g=%s', self.g, type(self.g))
         log.info('original nodes=%s, edges=%s', self.g_directed.order(), self.g_directed.size())
 
-        if options.simplify:
+        if simplify:
             log.info('simplifying graph')
             self.g_directed = osmnx.simplification.simplify_graph(self.g_directed, strict=False, remove_rings=False)
             pass
@@ -607,7 +607,7 @@ class Burbing:
 
     ##
     ##
-    def create_gpx_track(self, g, edges, simplify=False):
+    def create_gpx_track(self, g, edges, simplify: bool=False):
 
         # create GPX XML.
 
@@ -754,7 +754,7 @@ if __name__ == '__main__':
         burbing.set_start_location(args.start)
         pass
 
-    burbing.load(args)
+    burbing.load(args.simplify)
 
     if args.prune:
         burbing.prune()
