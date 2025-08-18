@@ -36,18 +36,6 @@ Some known limitations:
 
 ## Requirements
 
-This repo hasn't been set up as a proper installation or package yet -
-it's just a script and you'll need to sort out your own Python
-dependencies.  You will need to pip install the following
-packages (tested on late version of Python 3 only so far).
-
-* shapely
-* gpxpy
-* numpy
-* networkx
-* geopandas
-* osmnx
-
 ```bash
 pip install -r requirements.txt
 ```

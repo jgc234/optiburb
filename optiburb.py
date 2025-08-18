@@ -19,6 +19,7 @@ import argparse
 import gpxpy
 import gpxpy.gpx
 import datetime
+import numpy as np
 
 logging.basicConfig(
     format='%(asctime)-15s %(filename)s:%(funcName)s:%(lineno)s [%(levelname)s] %(message)s',
@@ -39,7 +40,6 @@ class Burbing:
     def __init__(self):
 
         self.g = None
-
         self.polygons = {}
         self.region: shapely.geometry.Polygon = shapely.geometry.Polygon()
         self.name = ''
@@ -68,7 +68,6 @@ class Burbing:
             '[!"razed"]'
         )
 
-
         log.debug('custom_filter=%s', self.custom_filter)
 
         # not all of these fields are used at the moment, but they
@@ -81,6 +80,7 @@ class Burbing:
 
         osmnx.settings.useful_tags_way = useful_tags_way
         osmnx.settings.use_cache = True
+        osmnx.settings.cache_folder = '.osmnx_cache'
         osmnx.settings.log_console = True
 
         log.warning(self.WARNING)
@@ -111,6 +111,8 @@ class Burbing:
     def get_osm_polygon(self, name: str, select: int = 1, buffer_dist: int = 20) -> shapely.geometry.Polygon:
 
         log.info('searching for query=%s, which_result=%s', name, select)
+
+        # TODO - work on more complex queries to determine an administrative boundary
 
         gdf = osmnx.geocode_to_gdf(name, which_result=select)
 
@@ -144,7 +146,7 @@ class Burbing:
 
     ##
     ##
-    def set_start_location(self, addr):
+    def set_start_location(self, addr: str):
 
         point =  osmnx.geocoder.geocode(addr)
         self.start = point
@@ -153,23 +155,20 @@ class Burbing:
 
     ##
     ##
-    def find_odd_nodes(self):
-
-        # for undirected graphs
+    def find_odd_nodes(self) -> set[int]:
 
         odd_nodes = { i for i, n in self.g.degree if n % 2 == 1 }
-
         return odd_nodes
 
     ##
     ##
-    def get_pair_combinations(self, nodes):
+    def get_pair_combinations(self, nodes: set[int]) -> list[tuple[int, int]]:
         pairs = list(itertools.combinations(nodes, 2))
         return pairs
 
     ##
     ##
-    def get_shortest_path_pairs(self, g, pairs):
+    def get_shortest_path_pairs(self, g: nx.Graph, pairs: list[tuple[int, int]]) -> dict[tuple[int, int], np.float64]:
 
         # XXX - consider Floyd–Warshall here instead of repeated
         # Dijkstra.  Also consider how to parallelise this as a
@@ -178,25 +177,25 @@ class Burbing:
 
         shortest_paths = {}
 
-        _prev_pct = 0
-        _size = len(pairs)
-        _prev_n = 0
-        _prev_time = time.time()
+        prev_pct = 0
+        prev_n = 0
+        prev_time = time.time()
+        size = len(pairs)
 
         for n, pair in enumerate(pairs):
             i, j = pair
             shortest_paths[pair] = nx.dijkstra_path_length(g, i, j, weight='length')
 
-            ## output progress
+            cur_pct = int(100 * n / size)
+            if prev_pct != cur_pct:
+                cur_time = time.time()
+                if cur_time != prev_time:
+                    log.info('dijkstra progress %s%%, [%d/%d] %d/second', cur_pct, n, size, (prev_n - n) / (prev_time - cur_time));
+                    pass
 
-            _cur_pct = int(100 * n / _size)
-            if _prev_pct != _cur_pct:
-                _cur_time = time.time()
-                log.info('dijkstra progress %s%%, [%d/%d] %d/second', _cur_pct, n, _size, (_prev_n - n) / (_prev_time - _cur_time))
-
-                _prev_time = _cur_time
-                _prev_pct = _cur_pct
-                _prev_n = n
+                prev_time = cur_time
+                prev_pct = cur_pct
+                prev_n = n
                 pass
             pass
 
@@ -367,7 +366,7 @@ class Burbing:
 
     ##
     ##
-    def determine_circuit(self):
+    def determine_circuit(self) -> None:
 
         odd_matching = nx.algorithms.max_weight_matching(self.g_odd_nodes, True)
 
@@ -383,18 +382,20 @@ class Burbing:
 
     ##
     ##
-    def reverse_linestring(self, line):
+    def reverse_linestring(self, line: shapely.geometry.LineString):
 
         return shapely.geometry.LineString(line.coords[::-1])
 
     ##
     ##
-    def directional_linestring(self, g, edge):
+    def directional_linestring(self, g: nx.Graph, edge: tuple[int, int]) -> shapely.geometry.LineString | None:
 
         # return a linestring that points in the same direction as the
         # nodes of the specified edge.
 
+
         u, v = edge
+
         data = g.get_edge_data(u, v, 0)
         if data is None:
             log.error('no data for edge %s', edge)
@@ -460,7 +461,8 @@ class Burbing:
             directional_linestring = self.directional_linestring(g, edge)
 
             for c in directional_linestring.coords:
-                if c == prev: continue
+                if c == prev:
+                    continue
 
                 coords.append(c)
                 prev = c
